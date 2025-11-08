@@ -45,8 +45,7 @@ The database contains:
 
 These tables store subscription and streaming information, which form the foundation of the analytical model.
 
-📸 *Screenshot placeholder:*  
-`![Azure SQL Database](./pipeline_screenshots/sql_database.png)`
+`![Azure SQL Database Setup](./images/creatingSource.PNG)`
 
 ---
 
