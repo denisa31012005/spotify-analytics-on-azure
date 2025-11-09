@@ -69,6 +69,8 @@ I built an ADF **pipeline** to perform both **initial backfill** and **increment
 The **Incremental_Ingestion** pipeline is designed to move data from the Azure SQL Database to the Data Lake's bronze container, efficiently handling both the initial full load and subsequent incremental (CDC - Change Data Capture) loads.  
 The pipeline is fully metadata-driven using parameters, making it reusable for any dimension or fact table in the source database.
 
+![First Pipeline](../images/final%20Pipelinerun.PNG)
+
 ---
 
 ## Description of Pipeline Activities
@@ -107,6 +109,8 @@ Once the AzureSQLToLake activity successfully completes, the pipeline proceeds t
 - Mechanism: The activity is used to run a SQL query that determines the high-watermark.
 
 - Output: The single maximum value which will serve as the next stable watermark.
+
+![Max Query](../images/max_query.png)
 
 5. `update_last_cdc` (Copy Data Activity)
 - Purpose: To persist the new high-watermark for the next pipeline execution.
@@ -166,30 +170,5 @@ The file path components(`@container` , `@folder` , `@file`) are passed dynamica
 
 - **Usage**:
 This dataset is used as a source to read raw, unstructured, or semi-structured data immediately after ingestion.
-
----
-
-## Pipeline Activities
-
-The pipeline orchestrates five main activities, as shown in the run detail:
-
-| Activity Name  | Type          | Purpose                                                                                   |
-|----------------|---------------|-------------------------------------------------------------------------------------------|
-| `last_cdc`     | Lookup        | Fetches the last processed timestamp from the `cdc.json` metadata file in the Data Lake. This value is used as the `@from_date` to filter the SQL source. |
-| `current`      | Set Variable  | Records the current pipeline execution timestamp. This value will be used as the `@to_date` filter for the current run and as the new CDC value for the next run. |
-| `AzureSQLToLake` | Copy Data   | The main ingestion activity. Uses a dynamic SQL query to select all records from the source table where the `@cdc_col` is between the last CDC value and the current timestamp. Writes the output to a dynamic Parquet dataset (`parquet_dynamic`) in the bronze container. |
-| `max_cdc`      | Script        | Executes a SQL query against the source database to confirm the actual maximum CDC value successfully read from the table during this run. Ensures the next run starts from the correct point. |
-| `update_last_cdc` | Copy Data  | Updates the `cdc.json` file in the Data Lake with the confirmed max timestamp retrieved by the `max_cdc` script, preparing the metadata for the next incremental run. |
-
----
-
-## Conditional Logic (Mentioned in Setup)
-
-- **Conditional Triggering:**  
-  Although not visible in the screenshot, the presence of an `ifNewRecords` condition is crucial.  
-  This typically wraps the final `update_last_cdc` activity to ensure the `cdc.json` file is only updated if new records were actually processed, preventing unnecessary updates or logic errors on runs with no new data.
-
-- **Backfilling:**  
-  The initial full load is naturally handled by setting the starting `cdc.json` value to `1900-01-01`, which satisfies the backfilling requirement by reading all historical data.
 
 ---
