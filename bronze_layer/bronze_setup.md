@@ -71,14 +71,25 @@ The pipeline is fully metadata-driven using parameters, making it reusable for a
 
 ---
 
-## Metadata Configuration
+## CDC Metadata Setup
 
-To manage the CDC state, a JSON metadata file is used:
+To enable incremental data ingestion, I first created a **CDC (Change Data Capture) tracking file** named `cdc.json`.  
+This file maintains the last processed timestamp, ensuring that each subsequent pipeline run only ingests new or updated records.
 
-### cdc.json Setup:
-- An initial `cdc.json` file was created and stored in a designated `cdc` folder within the bronze container in the Data Lake.
-- It starts with a minimal date value (e.g., `{"cdc":"1900-01-01"}`) to ensure the first pipeline run performs a full data backfill.
-- This file is recursively updated at the end of each successful run with the latest timestamp from the source table.
+### creating the cdc.json File
+
+- I created a JSON file called `cdc.json` containing key-value pairs to store the CDC state.
+- The initial value is set to a minimal date to perform a **full historical load** on the first pipeline execution:
+
+  ```json
+  {"cdc": "1900-01-01"}
+
+### Defining the Initial Load Query
+
+After creating the cdc.json file, I wrote an SQL query to fetch all data from the Azure SQL Database during the first full load.
+The query dynamically filters data based on the CDC value from the JSON file.
+
+![Metadata configuration](../images/creatingSource.PNG)
 
 ### Pipeline Parameters:
 The pipeline uses dynamic parameters to avoid hardcoding table names:
@@ -88,7 +99,7 @@ The pipeline uses dynamic parameters to avoid hardcoding table names:
 
 ---
 
-## Pipeline Activities Breakdown
+## Pipeline Activities
 
 The pipeline orchestrates five main activities, as shown in the run detail:
 
