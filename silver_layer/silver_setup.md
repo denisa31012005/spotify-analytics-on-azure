@@ -79,6 +79,8 @@ External Locations map the secured credential to specific physical file paths in
 
 ## Spark Structured Streaming and Auto Loader Implementation
 
+![Initial Streaming](../images/SparkStreamInit.PNG)
+
 The core ingestion mechanism in the Silver Layer uses Spark Structured Streaming combined with Databricks Auto Loader (`cloudFiles` format).
 
 1. Idempotency through Auto Loader
@@ -327,7 +329,7 @@ df_fact = reusable().dropColumns(df_fact, ['_rescued_data'])
     .toTable("spotify_cata.silver.FactStream")
 )
 ```
-
+![Ex silver table](../images/exTableSilverLayerDatabr.PNG)
 
 
 
