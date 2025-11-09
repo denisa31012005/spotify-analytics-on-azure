@@ -155,7 +155,37 @@ This optimization introduces a new pipeline parameter (`from_date`) and updates 
 2. Updated Dynamic SQL Query
 The source query within the `AzureSQLToLake` Copy Data activity is updated to dynamically choose the correct start date for the load.
 
+![Backfilling Update](../images/backfillingUpdated.png)
 
+3. Overall flow:
+
+- Default Run: If the `from_date` is left blank, the pipeline executes a normal incremental load.
+
+- Backfill Run: If the `from_date` is supplied, the pipeline ignores the `cdc.json` file and performs a load starting from the user date, making it easy to fix historical data without changing the pipeline code.
+
+## Pipeline Optimization 3: Centralized Failure Notification (Logic Apps)
+
+In order to overcome the issue of failures across multiple pipelines, a centralized error notification system was implemented using Azure Logic Apps. This ensures specific alerts are sent upon any pipeline failure.
+
+1. New Resource: `logicappazureproject` (Azure Logic App)
+
+- Purpose: To serve as a reliable endpoint for handling failure notifications from any Azure Data Factory pipeline.
+
+- Trigger: When an HTTP request is received. When an ADF pipeline calls this URL, the Logic App workflow begins.
+
+- Action: Send an email (V2) - This sends a detailed notification email using a dynamic message body.
+
+2. Alert Notification Logic
+
+| Step | Activity | Purpose |
+|------|-----------|----------|
+| **Trigger** | When an HTTP request is received | Listens for a POST request from the pipeline's Alerts web activity. |
+| **Action** | Send an email (V2) | Sends a notification to the operations team with critical failure details. |
+
+![Logic app](../images/backfillingUpdated.png)
+
+3. Integration into ADF (Alerts Web Activity)
+To connect the ADF pipeline to the Logic App, an Alerts Web Activity is added to the pipeline.
 
 ## CDC Metadata Setup
 
