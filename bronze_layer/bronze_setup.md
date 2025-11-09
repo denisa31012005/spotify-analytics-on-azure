@@ -273,3 +273,9 @@ The file path components(`@container` , `@folder` , `@file`) are passed dynamica
 This dataset is used as a source to read raw, unstructured, or semi-structured data immediately after ingestion.
 
 ---
+
+# Final view of working pipeline
+
+![Proof](../images/proof%20of%20succeded%20pipeline%20for%20each.png)
+
+---
