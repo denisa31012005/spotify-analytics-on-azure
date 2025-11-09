@@ -38,3 +38,53 @@ To enable Unity Catalog to access data in the Azure Data Lake, a secure, role-ba
   - Role Assignment: The Managed Identity associated with the `accessazureproject` connector was granted the Storage Blob Data Contributor role.
 
   - Result: This role assignment allows the Managed Identity to read, write, and delete blobs within the data lake, securely granting Databricks access to the Bronze data.
+
+
+## Unity Catalog Structure and Data Mapping
+
+To establish proper data governance and separation of environments, a structured architecture was implemented in Unity Catalog, mapping logical catalogs and schemas to the physical storage containers in the Data Lake.
+
+1. Catalog and Schema Definition
+
+### Unity Catalog Components
+
+| Component | Name | Purpose |
+|------------|------|----------|
+| **Catalog** | `spotify_cata` | The top-level logical container for the entire Spotify data domain. |
+| **Schema** | `silver` | The specific logical container within the catalog for holding all clean, Silver Layer tables. |
+
+2. External Credential
+The security configuration established previously is formalized in Databricks as an External Credential.
+
+- Credential Name: credential (This represents the `accessazureproject` Managed Identity Access Connector).
+
+- Function: This credential allows Unity Catalog to securely assume the Managed Identity's permissions when accessing the Data Lake.
+
+3. External Locations
+
+External Locations map the secured credential to specific physical file paths in the Data Lake. These locations define the only permitted read/write paths for data processing.
+
+| External Location | Purpose |
+|------------|------|
+| `bronze` | Read-only path for accessing raw data ingested by ADF. |
+| `silver` | Write-path for storing the cleaned, refined Delta tables. |
+| `gold` | Write-path for storing final aggregated reporting tables. |
+
+4. Notebook Development Environment
+- Workspace Folder: `SpotifyAzureProject`
+
+- Processing: A dedicated notebook within this folder handles the dimension and fact table processing.
+
+- Execution: The notebook is attached to a Serverless Cluster, utilizing Databricks' optimized and automatically managed compute environment for cost-efficient processing.
+
+
+
+
+
+
+
+
+
+
+
+
