@@ -152,7 +152,7 @@ This optimization introduces a new pipeline parameter (`from_date`) and updates 
 
 - Mechanism: This optional string parameter is supplied by the user when manually triggering the pipeline (e.g., `2023-01-01`).
 
-2. Updated Dynamic SQL Query
+2. Updated Dynamic SQL Query:
 The source query within the `AzureSQLToLake` Copy Data activity is updated to dynamically choose the correct start date for the load.
 
 ![Backfilling Update](../images/backfillingUpdated.png)
@@ -182,10 +182,45 @@ In order to overcome the issue of failures across multiple pipelines, a centrali
 | **Trigger** | When an HTTP request is received | Listens for a POST request from the pipeline's Alerts web activity. |
 | **Action** | Send an email (V2) | Sends a notification to the operations team with critical failure details. |
 
-![Logic app](../images/backfillingUpdated.png)
+![Logic app](../images/logic%20app.PNG)
 
 3. Integration into ADF (Alerts Web Activity)
 To connect the ADF pipeline to the Logic App, an Alerts Web Activity is added to the pipeline.
+
+## Pipeline Optimization 4: Integrated ForEach Loop (Metadata-Driven Ingestion)
+
+![ForEach Integration](../images/integratedForEach.PNG)
+
+The entire incremental loading logic has been encapsulated within a `ForEach` activity. This highly effective design pattern allows the pipeline to process multiple data sources without the need for creating a separate pipeline for each one.
+
+1. `ForEach` activity:
+- Purpose: To iterate over a list of table configurations, executing the full CDC and ingestion process for each item.
+
+- Mechanism: The `ForEach` loop is configured to receive an array of `JSON` objects as its input. In each iteration, it assigns the properties of the current `JSON` object to the pipeline activities inside the loop.
+
+- Internal Activities: The loop contains the core incremental logic previously built:
+   - `last_cdc` (Lookup)
+   - `AzureSQLToLake` (Copy Data)
+   - `ifIncrementalData` (If Condition)
+ 
+2. Loop Input (Configuration Array)
+The input for the `ForEach` activity is a `JSON` array, where each object defines all the dynamic parameters required to process a single source table.
+
+   ```json
+   [
+        { "schema" : "dbo", "table" : "DimUser", "cdc_col" : "updated_at", "from_date" : "" },
+        { "schema" : "dbo", "table" : "DimTrack", "cdc_col" : "updated_at", "from_date" : "" },
+        { "schema" : "dbo", "table" : "DimDate", "cdc_col" : "date", "from_date" : "" },
+        { "schema" : "dbo", "table" : "DimArtist", "cdc_col" : "updated_at", "from_date" : "" },
+        { "schema" : "dbo", "table" : "FactStream", "cdc_col" : "stream_timestamp", "from_date" : "" }
+   ]
+
+3. Failure Handling (Alerts Web Activity)
+- The Web activity named `Alerts` (which triggers the Logic App for notification) is now connected to the `ForEach` loop using the On failure dependency.
+
+- If any iteration fails, the `ForEach` loop stops and executes the Alerts Web activity.
+
+---
 
 ## CDC Metadata Setup
 
