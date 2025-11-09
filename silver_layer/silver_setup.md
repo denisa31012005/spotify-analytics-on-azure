@@ -331,9 +331,92 @@ df_fact = reusable().dropColumns(df_fact, ['_rescued_data'])
 ```
 ![Ex silver table](../images/exTableSilverLayerDatabr.PNG)
 
+## Dynamic SQL Generation with Jinja Templating
+To avoid writing repetitive or hardcoded SQL for complex aggregations and joins (typically needed for the Gold Layer),I implemented Jinja Templating within a dedicated Databricks notebook.
 
+| Component | Location                                     | Role                                                                                  |
+|-----------|----------------------------------------------|---------------------------------------------------------------------------------------|
+| Tool      | Jinja2 Library (Python)                       | Used to substitute variables and apply conditional logic within a SQL template string.|
+| Location  | Databricks Notebook in `spotify_dab/source` folder | The dedicated notebook where the Python code loads the template and executes the rendering. |
 
+### Core Function: Dynamic Joins
+- Goal: The primary purpose of using Jinja is to dynamically apply joins between tables.
 
+- Mechanism: Instead of writing out every `JOIN` clause in a static `SQL` file, a single template can define the structure of the joins. The Python code in the Jinja notebook then provides a list of tables and their join keys (metadata).
+
+### Jinja Template Implementation
+This code dynamically generates a SQL query with multiple joins using Jinja2 templating based on configurable table and column parameters.
+
+```python
+# ======================================================
+# DYNAMIC SQL QUERY GENERATION USING JINJA2 TEMPLATE
+# ======================================================
+
+# Install Jinja2 if not already installed
+# pip install jinja2
+
+from jinja2 import Template
+
+# ======================================================
+# PARAMETERS FOR QUERY GENERATION
+# ======================================================
+parameters = [
+    {
+        # Base table for FROM clause and join conditions
+        "table": "spotify_cata.silver.factstream",
+        "alias": "factstream",
+        "cols": "factstream.stream_id, factstream.listen_duration"
+    },
+    {
+        "table": "spotify_cata.silver.dimuser",
+        "alias": "dimuser",
+        "cols": "dimuser.user_id, dimuser.user_name",
+        "condition": "factstream.user_id = dimuser.user_id"
+    },
+    {
+        "table": "spotify_cata.silver.dimtrack",
+        "alias": "dimtrack",
+        "cols": "dimtrack.track_id, dimtrack.track_name",
+        "condition": "factstream.track_id = dimtrack.track_id"
+    }
+]
+
+# ======================================================
+# JINJA2 TEMPLATE STRING FOR PARAMETRIZED SQL QUERY
+# ======================================================
+query_text = """
+SELECT
+    {% for param in parameters %}
+        {{ param.cols }}
+        {% if not loop.last %}, {% endif %}
+    {% endfor %}
+FROM
+    {% for param in parameters %}
+        {% if loop.first %}
+            {{ param.table }} AS {{ param.alias }}
+        {% endif %}
+    {% endfor %}
+    {% for param in parameters %}
+        {% if not loop.first %}
+    LEFT JOIN
+        {{ param.table }} AS {{ param.alias }}
+    ON
+        {{ param.condition }}
+        {% endif %}
+    {% endfor %}
+"""
+
+# ======================================================
+# RENDER THE QUERY WITH PARAMETERS
+# ======================================================
+jinja_sql_template = Template(query_text)
+query = jinja_sql_template.render(parameters=parameters)
+
+print(query)
+```
+As a partial example of the final output:
+
+![Jinja final](../images/exTableSilverLayerDatabr.PNG)
 
 
 
