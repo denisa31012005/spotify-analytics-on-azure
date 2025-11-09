@@ -121,6 +121,10 @@ Once the AzureSQLToLake activity successfully completes, the pipeline proceeds t
 
 - Function: It overwrites the contents of the `cdc.json` file with the new, confirmed maximum CDC value, ensuring the next run starts from this point. This completes the incremental loop.
 
+## Pipeline First Optimization
+
+
+
 ## CDC Metadata Setup
 
 To enable incremental data ingestion, I first created a **CDC (Change Data Capture) tracking file** named `cdc.json`.  
