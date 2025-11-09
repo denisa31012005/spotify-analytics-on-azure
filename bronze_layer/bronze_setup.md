@@ -76,7 +76,13 @@ The pipeline is fully metadata-driven using parameters, making it reusable for a
 To enable incremental data ingestion, I first created a **CDC (Change Data Capture) tracking file** named `cdc.json`.  
 This file maintains the last processed timestamp, ensuring that each subsequent pipeline run only ingests new or updated records.
 
-### creating the cdc.json File
+### Pipeline Parameters:
+The pipeline uses dynamic parameters to avoid hardcoding table names:
+- `@schema`: The source table schema name (e.g., `dbo`).
+- `@table`: The source table name (e.g., `DimUser`).
+- `@cdc_col`: The name of the CDC column (e.g., `updated_at`).
+
+### Creating the cdc.json File
 
 - I created a JSON file called `cdc.json` containing key-value pairs to store the CDC state.
 - The initial value is set to a minimal date to perform a **full historical load** on the first pipeline execution:
@@ -86,16 +92,10 @@ This file maintains the last processed timestamp, ensuring that each subsequent 
 
 ### Defining the Initial Load Query
 
-After creating the cdc.json file, I wrote an SQL query to fetch all data from the Azure SQL Database during the first full load.
+After creating the `cdc.json` file, I wrote an SQL query to fetch all data from the Azure SQL Database during the first full load.
 The query dynamically filters data based on the CDC value from the JSON file.
 
-![Metadata configuration](../images/creatingSource.PNG)
-
-### Pipeline Parameters:
-The pipeline uses dynamic parameters to avoid hardcoding table names:
-- `@schema`: The source table schema name (e.g., `dbo`).
-- `@table`: The source table name (e.g., `DimUser`).
-- `@cdc_col`: The name of the CDC column (e.g., `updated_at`).
+![Query for loading](../images/queryForloading.png)
 
 ---
 
