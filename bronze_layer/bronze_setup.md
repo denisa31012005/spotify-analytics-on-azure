@@ -121,7 +121,39 @@ Once the AzureSQLToLake activity successfully completes, the pipeline proceeds t
 
 - Function: It overwrites the contents of the `cdc.json` file with the new, confirmed maximum CDC value, ensuring the next run starts from this point. This completes the incremental loop.
 
-## Pipeline First Optimization
+## Pipeline Optimization 1: Conditional Execution (ifNewRecords)
+
+![If Condition Optimization](../images/ifConditionOptimized.png)
+
+This optimization introduces conditional logic to prevent subsequent activities from running and generating empty output files if no new data is detected during the incremental load.
+
+1. New Activity: `ifNewRecords` (If Condition)
+- Purpose: To check if the main data movement activity (AzureSQLToLake) loaded any rows.
+
+- Mechanism: The pipeline now checks a condition immediately following the data copy. If the record count is zero (False), the watermark update and unnecessary empty file creation are skipped.
+
+- If Condition Query: The If Condition uses a dynamic expression to evaluate the output of the preceding AzureSQLToLake Copy Data activity. The condition checks if the number of rows read from the source is greater than zero.
+
+![If Condition Query](../images/ifConditionQuery.png)
+
+### Conditional Flow Description:
+
+| Condition | Branch Action | Reason |
+|------------|----------------|---------|
+| **True Branch (New Records Found)** | Executes `max_cdc → update_last_cdc` | Proceeds with the load. The watermark must be updated since data was successfully moved. |
+| **False Branch (No New Records)** | Executes `DeleteEmptyFile` *(Delete Activity)* | Skips the update. Deletes the empty file created by `AzureSQLToLake` and avoids updating the watermark unnecessarily. |
+
+## Pipeline Optimization 2: adding Backfilling feature
+
+This optimization introduces a new pipeline parameter (`from_date`) and updates the source query logic to allow for selective backfilling or complete historical reruns, overriding the standard incremental high-watermark.
+
+1. New Pipeline Parameter: `from_date`
+- Purpose: To define a custom start date for data ingestion, enabling users to reprocess data from a specific historical point.
+
+- Mechanism: This optional string parameter is supplied by the user when manually triggering the pipeline (e.g., `2023-01-01`).
+
+2. Updated Dynamic SQL Query
+The source query within the `AzureSQLToLake` Copy Data activity is updated to dynamically choose the correct start date for the load.
 
 
 
