@@ -77,8 +77,256 @@ External Locations map the secured credential to specific physical file paths in
 
 - Execution: The notebook is attached to a Serverless Cluster, utilizing Databricks' optimized and automatically managed compute environment for cost-efficient processing.
 
+## Spark Structured Streaming and Auto Loader Implementation
 
+The core ingestion mechanism in the Silver Layer uses Spark Structured Streaming combined with Databricks Auto Loader (`cloudFiles` format).
 
+1. Idempotency through Auto Loader
+
+The primary reason for selecting Auto Loader is its support for Idempotency—the guarantee that re-running the process with the same inputs will produce the same output state without creating duplicate records.
+
+  - Mechanism: Auto Loader maintains an internal state store (backed by files in the checkpoint directory) to track every file it has processed from the Bronze source. When the streaming job restarts, it consults this list, ensuring it only ingests new files since the last successful run.
+
+  - Efficiency: This approach is far more scalable than list-and-check methods, as it avoids listing large input directories repeatedly.
+
+2. Dedicated Storage Structure
+
+To manage the streaming process and store the Delta tables, a specific folder structure is implemented in the Silver container of the Data Lake for each target table (e.g  DimUser, DimTrack).
+
+| Folder Name | Purpose |
+|--------------|----------|
+| `data` | This directory stores the actual data files for the Delta Lake table (e.g., `DimUser`). This is the path registered in Unity Catalog. |
+| `checkpoint` | This is the critical folder used by Structured Streaming to store metadata about the stream's progress. |
+
+![CheckPoint](../images/checkpoint.PNG)
+
+3. The Checkpoint Folder's Role
+
+The `checkpointLocation` option used in both the read and write streams is the key to idempotency and fault tolerance.
+
+- **Read Stream** (`spark.readStream`): The `cloudFiles.schemaLocation` option specifies the checkpoint directory where Auto Loader tracks processed files to ensure no duplicates are read.
+
+- **Write Stream** (`df.writeStream`): The `checkpointLocation` option stores the metadata that guarantees the exactly-once transaction logic of the stream write
+
+## Silver Layer Transformation (Autoloader + Delta Lake)
+
+The notebook implements using pySpark the Silver layer transformation in Azure Databricks, processing Parquet files from the Bronze container and writing clean, curated data into Delta tables stored in the Silver container.
+
+Data is read incrementally using Autoloader, which detects new files automatically and supports schema evolution through `addNewColumns`.
+
+- Used concepts and transformations:
+
+| Concept                       | Description                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| **Autoloader**                | Incrementally loads new data files from Bronze layer as a stream.                     |
+| **Structured Streaming**      | Processes data continuously and writes it in Delta format.                            |
+| **Delta Lake**                | Ensures ACID transactions and schema evolution in Silver layer tables.                |
+| **Reusable Transformations**  | Custom Python class for shared cleanup logic (`dropColumns`).                         |
+| **Data Quality Enhancements** | Cleaning, deduplication, standardization (e.g., uppercase usernames, duration flags). |
+| **Checkpointing**             | Maintains streaming state to avoid data reprocessing.                                 |
+
+### transformations.py
+```python
+# ======================================================
+# CUSTOM REUSABLE TRANSFORMATION CLASS
+# ======================================================
+
+class reusable:
+    """
+    Utility class to perform reusable DataFrame transformations(dropping unwanted columns across multiple datasets.)
+    """
+
+    def dropColumns(self, df, columns):
+        """
+        Drops a list of specified columns from a given DataFrame.
+        """
+        df = df.drop(*columns)
+        return df
+```
+
+### DIMUSER
+
+```python
+# ======================================================
+# READ DATA FROM BRONZE LAYER (STREAMING)
+# ======================================================
+df_user = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimUser/checkpoint")
+    .option("schemaEvolutionMode", "addNewColumns")
+    .load("abfss://bronze@storageazureproject.dfs.core.windows.net/DimUser")
+)
+
+# ======================================================
+# TRANSFORMATIONS
+# ======================================================
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+
+# Convert username to uppercase
+df_user = df_user.withColumn("user_name", upper(col("user_name")))
+
+# Use reusable transformation class
+from spotify_dab.utils.transformations import reusable
+
+df_user_obj = reusable()
+# Drop unnecessary columns
+df_user = df_user_obj.dropColumns(df_user, ['_rescued_data'])
+# Remove duplicates based on user_id
+df_user = df_user.dropDuplicates(['user_id'])
+
+display(df_user)
+
+# ======================================================
+# WRITE TO SILVER LAYER (DELTA TABLE)
+# ======================================================
+(df_user.writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimUser/checkpoint")
+    .trigger(once=True)
+    .option("path", "abfss://silver@storageazureproject.dfs.core.windows.net/DimUser/data")
+    .toTable("spotify_cata.silver.DimUser")
+)
+
+```
+### DIMTRACK
+```python
+# ======================================================
+# READ DATA FROM BRONZE LAYER
+# ======================================================
+df_track = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimTrack/checkpoint")
+    .option("schemaEvolutionMode", "addNewColumns")
+    .load("abfss://bronze@storageazureproject.dfs.core.windows.net/DimTrack")
+)
+
+# ======================================================
+# TRANSFORMATIONS
+# ======================================================
+
+# Add duration classification flag
+df_track = df_track.withColumn(
+    "durationFlag",
+    when(col("duration_sec") < 150, "low")
+    .when(col("duration_sec") < 300, "medium")
+    .otherwise("high")
+)
+
+# Clean track names (remove hyphens)
+df_track = df_track.withColumn("track_name", regexp_replace(col("track_name"), "-", ""))
+
+# Drop unnecessary columns
+df_track = reusable().dropColumns(df_track, ['_rescued_data'])
+
+# ======================================================
+# WRITE TO SILVER LAYER
+# ======================================================
+(df_track.writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimTrack/checkpoint")
+    .trigger(once=True)
+    .option("path", "abfss://silver@storageazureproject.dfs.core.windows.net/DimTrack/data")
+    .toTable("spotify_cata.silver.DimTrack")
+)
+
+```
+### DIMARTIST
+```python
+# ======================================================
+# READ DATA FROM BRONZE LAYER
+# ======================================================
+df_art = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimArtist/checkpoint")
+    .option("schemaEvolutionMode", "addNewColumns")
+    .load("abfss://bronze@storageazureproject.dfs.core.windows.net/DimArtist")
+)
+
+# ======================================================
+# TRANSFORMATIONS
+# ======================================================
+df_art_obj = reusable()
+df_art = df_art_obj.dropColumns(df_art, ['_rescued_data'])
+df_art = df_art.dropDuplicates(['artist_id'])
+
+# ======================================================
+# WRITE TO SILVER LAYER
+# ======================================================
+(df_art.writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimArtist/checkpoint")
+    .trigger(once=True)
+    .option("path", "abfss://silver@storageazureproject.dfs.core.windows.net/DimArtist/data")
+    .toTable("spotify_cata.silver.DimArtist")
+)
+```
+### DIMDATE
+```python
+# ======================================================
+# READ DATA FROM BRONZE LAYER
+# ======================================================
+df_date = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimDate/checkpoint")
+    .option("schemaEvolutionMode", "addNewColumns")
+    .load("abfss://bronze@storageazureproject.dfs.core.windows.net/DimDate")
+)
+
+# ======================================================
+# TRANSFORMATIONS
+# ======================================================
+df_date = reusable().dropColumns(df_date, ['_rescued_data'])
+
+# ======================================================
+# WRITE TO SILVER LAYER
+# ======================================================
+(df_date.writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/DimDate/checkpoint")
+    .trigger(once=True)
+    .option("path", "abfss://silver@storageazureproject.dfs.core.windows.net/DimDate/data")
+    .toTable("spotify_cata.silver.DimDate")
+)
+```
+### FACTSTREAM
+```python
+# ======================================================
+# READ DATA FROM BRONZE LAYER
+# ======================================================
+df_fact = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/FactStream/checkpoint")
+    .option("schemaEvolutionMode", "addNewColumns")
+    .load("abfss://bronze@storageazureproject.dfs.core.windows.net/FactStream")
+)
+
+# ======================================================
+# TRANSFORMATIONS
+# ======================================================
+df_fact = reusable().dropColumns(df_fact, ['_rescued_data'])
+
+# ======================================================
+# WRITE TO SILVER LAYER
+# ======================================================
+(df_fact.writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://silver@storageazureproject.dfs.core.windows.net/FactStream/checkpoint")
+    .trigger(once=True)
+    .option("path", "abfss://silver@storageazureproject.dfs.core.windows.net/FactStream/data")
+    .toTable("spotify_cata.silver.FactStream")
+)
+```
 
 
 
