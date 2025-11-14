@@ -85,6 +85,26 @@ This project implements a Medallion Architecture using Azure Data Lake Storage G
 
 ![Architecture](./spotify_project_architecture.png)
 
+## Repository Structure
+```
+spotify-analytics-on-azure/
+│
+├── bronze_layer/                            
+│   ├── bronze_setup.md                 # read_me file which provides comprehensive details about the implementation of bronze layer
+│   ├── initial_load.sql                # initial sql query of the data load
+│
+├── silver_layer/                  
+│   ├── silver_seup.md/                 # read_me file which includes all the details about the silver layer
+│
+├── gold_layer/                  
+│   ├── gold_seup.md/                   # read_me file in which there are present all the insights regarding the creation of gold layer
+│
+├── images/                             # folder which contains all the images that are present in the read_me files
+│
+├── README.md                           # Project overview and instructions
+└── spotify_project_architecture.png    # image which describes the whole workflow of the project
+```
+---
 
 
 
